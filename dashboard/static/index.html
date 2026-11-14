@@ -56,6 +56,7 @@
     border: 2px solid var(--green); border-radius: 12px; padding: 14px 22px; font-size: 18px; font-weight: 600;
     display: none; max-width: 80vw; text-align: center; z-index: 1000; }
   .leaflet-container { background: #0E1B26; }
+  .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.6); }
   .leaflet-tooltip { font-family: Inter, sans-serif; }
   @media (max-width: 900px) {
     main { grid-template-columns: 1fr; height: auto; }
@@ -97,9 +98,13 @@ const CAR_HTML = '<div style="background:#4CC9F0;color:#06222E;font:700 12px Int
 
 function leafletMap(el) {
   const map = L.map(el, { zoomControl: true }).setView([43.648, -79.41], 14);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
-    maxZoom: 19 }).addTo(map);
+  // OpenStreetMap standard tiles: no API key needed. Darkened with a CSS filter (.dark-tiles).
+  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19, className: "dark-tiles" }).addTo(map);
+  // If tiles keep failing (venue Wi-Fi), drop them and keep the markers on a plain background.
+  let tileErrors = 0;
+  tiles.on("tileerror", () => { if (++tileErrors === 6) map.removeLayer(tiles); });
   const fleet = L.layerGroup().addTo(map);
   let car = null;
   return {
@@ -201,7 +206,9 @@ function svgMap(el) {
   };
 }
 
-const mapApi = window.L ? leafletMap("map") : svgMap($("map"));
+// Add ?map=offline to the dashboard address to force the built-in map (no internet needed).
+const forceOffline = new URLSearchParams(location.search).get("map") === "offline";
+const mapApi = (window.L && !forceOffline) ? leafletMap("map") : svgMap($("map"));
 const chargers = {};
 let state;
 
