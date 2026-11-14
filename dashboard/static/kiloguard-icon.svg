@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256" role="img" aria-label="KiloGuard icon">
+  <path d="M32 4 L56 12 V30 C56 45 46 55 32 60 C18 55 8 45 8 30 V12 Z" fill="#0F2A3D"/>
+  <path d="M32 8.5 L52 15 V30 C52 42.5 44 51 32 55.5 C20 51 12 42.5 12 30 V15 Z" fill="none" stroke="#22C55E" stroke-width="1.5" stroke-opacity="0.45"/>
+  <polygon points="37,13 21,35 31,35 28,51 44,28 34,28" fill="#22C55E"/>
+</svg>

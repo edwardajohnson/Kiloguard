@@ -1,0 +1,7 @@
+# Simulation mode needs only the first four. goat mode adds web3 and eth-account.
+starlette>=0.37
+uvicorn>=0.29
+requests>=2.31
+pytest>=8.0
+web3>=6.15
+eth-account>=0.11

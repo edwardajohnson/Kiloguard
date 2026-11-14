@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KiloGuard Live</title>
+<link rel="icon" href="/static/kiloguard-icon.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1620; --panel: #12212E; --panel-2: #183044; --line: #24405A;
+    --ink: #EEF3F1; --muted: #9FB4C2; --green: #22C55E; --red: #F2545B; --amber: #F5B83D;
+    --cyan: #4CC9F0; --violet: #B794F6; --navy: #0F2A3D;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: Inter, system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 20px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  header img { height: 40px; }
+  #scene { flex: 1; min-width: 0; }
+  #scene .title { font-size: 20px; font-weight: 700; }
+  #scene .story { color: var(--muted); font-size: 14px; margin-top: 2px; }
+  #mode { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); text-align: right; }
+  main { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, 1fr); gap: 16px; padding: 16px 20px;
+    height: calc(100% - 66px - 112px); }
+  #map { border-radius: 12px; border: 1px solid var(--line); min-height: 320px; }
+  #feedwrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; display: flex;
+    flex-direction: column; min-height: 0; }
+  #feedwrap h2 { margin: 0; padding: 12px 16px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1px solid var(--line); }
+  #feed { overflow-y: auto; padding: 8px 12px; flex: 1; }
+  .ev { padding: 8px 10px; margin: 6px 0; border-radius: 8px; background: var(--panel-2); font-size: 14px;
+    line-height: 1.4; border-left: 4px solid var(--line); }
+  .ev .t { font-family: "JetBrains Mono", monospace; color: var(--muted); font-size: 12px; margin-right: 6px; }
+  .ev.ok { border-left-color: var(--green); }
+  .ev.deny { border-left-color: var(--red); background: #2A1A22; }
+  .ev.money { border-left-color: var(--cyan); }
+  .ev.warn { border-left-color: var(--amber); }
+  .ev.ai { border-left-color: var(--violet); }
+  .ev.scene { border-left-color: var(--ink); font-weight: 700; background: var(--navy); }
+  .ev a { color: var(--cyan); font-family: "JetBrains Mono", monospace; font-size: 12px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 1px 6px;
+    border-radius: 4px; margin-right: 6px; vertical-align: 1px; }
+  .tag.deny { background: var(--red); color: #fff; } .tag.ok { background: var(--green); color: #06210F; }
+  .tag.money { background: var(--cyan); color: #06222E; } .tag.ai { background: var(--violet); color: #1C0F33; }
+  footer { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; padding: 0 20px 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .tile .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .tile .v { font-size: 28px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .tile .v.green { color: var(--green); } .tile .v.red { color: var(--red); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--green); width: 0; transition: width .4s; }
+  #banner { position: fixed; left: 50%; top: 84px; transform: translateX(-50%); background: var(--navy);
+    border: 2px solid var(--green); border-radius: 12px; padding: 14px 22px; font-size: 18px; font-weight: 600;
+    display: none; max-width: 80vw; text-align: center; z-index: 1000; }
+  .leaflet-container { background: #0E1B26; }
+  .leaflet-tooltip { font-family: Inter, sans-serif; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    #map { height: 50vh; } #feedwrap { height: 60vh; }
+    footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="/static/kiloguard-logo-dark.png" alt="KiloGuard">
+  <div id="scene"><div class="title">Waiting for the demo to start…</div>
+    <div class="story">Run <code>python scripts/run_demo.py --pace 0.8</code></div></div>
+  <div id="mode"></div>
+</header>
+<main>
+  <div id="map"></div>
+  <div id="feedwrap"><h2>Guardian decisions, payments and receipts</h2><div id="feed"></div></div>
+</main>
+<footer>
+  <div class="tile"><div class="k">Battery</div><div class="v" id="soc">–</div><div class="bar"><div id="socbar"></div></div></div>
+  <div class="tile"><div class="k">Energy bought</div><div class="v" id="kwh">0 kWh</div></div>
+  <div class="tile"><div class="k">Paid</div><div class="v" id="paid">$0.00</div></div>
+  <div class="tile"><div class="k">Payments</div><div class="v" id="txs">0</div></div>
+  <div class="tile"><div class="k">Attacks stopped</div><div class="v green" id="stopped">0</div></div>
+  <div class="tile"><div class="k">Lost to bad chargers</div><div class="v" id="lost">$0.00</div></div>
+</footer>
+<div id="banner"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const usd = (c) => "$" + (c / 100).toFixed(2);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (ch) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[ch]));
+
+// Two map back-ends with one interface: Leaflet with street tiles when online, and a built-in SVG
+// drawing when the map library or tiles cannot load (offline laptop, venue Wi-Fi).
+const CAR_HTML = '<div style="background:#4CC9F0;color:#06222E;font:700 12px Inter,sans-serif;padding:3px 7px;border-radius:6px;border:2px solid #fff;white-space:nowrap">🚕 Unit 07</div>';
+
+function leafletMap(el) {
+  const map = L.map(el, { zoomControl: true }).setView([43.648, -79.41], 14);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19 }).addTo(map);
+  const fleet = L.layerGroup().addTo(map);
+  let car = null;
+  return {
+    addCharger(c, style) {
+      const m = L.circleMarker([c.lat, c.lon], style).addTo(map);
+      m.bindTooltip(`${esc(c.name)}<br>$${(c.price_per_kwh_cents / 100).toFixed(2)}/kWh`, { direction: "top" });
+      return { set(s, label) { m.setStyle(s); if (label) m.bindTooltip(esc(c.name) + "<br>" + esc(label)); } };
+    },
+    setCar(lat, lon, show) {
+      if (!car) car = L.marker([lat, lon], { icon: L.divIcon({ className: "", html: CAR_HTML, iconAnchor: [36, 12] }) }).addTo(map);
+      car.setLatLng([lat, lon]); car.setOpacity(show ? 1 : 0);
+    },
+    setFleet(cars) {
+      fleet.clearLayers();
+      for (const c of cars) L.circleMarker([c.lat, c.lon], { radius: 5, color: "#4CC9F0", weight: 1,
+        fillColor: c.soc_pct < 25 ? "#F5B83D" : "#4CC9F0", fillOpacity: 0.9 }).bindTooltip(`${c.car_id} · ${c.soc_pct}%`).addTo(fleet);
+    },
+    view(lat, lon, zoom) { map.setView([lat, lon], zoom); },
+  };
+}
+
+function svgMap(el) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("width", "100%"); svg.setAttribute("height", "100%");
+  svg.style.background = "#0E1B26"; svg.style.borderRadius = "12px";
+  el.appendChild(svg);
+  let box = { s: 43.632, n: 43.652, w: -79.452, e: -79.392 };
+  const items = [];
+  const groups = { grid: document.createElementNS(NS, "g"), chargers: document.createElementNS(NS, "g"),
+                   fleet: document.createElementNS(NS, "g"), car: document.createElementNS(NS, "g") };
+  Object.values(groups).forEach((g) => svg.appendChild(g));
+  const note = document.createElementNS(NS, "text");
+  note.textContent = "Offline map: positions to scale, no street tiles";
+  note.setAttribute("fill", "#9FB4C2"); note.setAttribute("font-size", "12"); note.setAttribute("x", "12");
+  svg.appendChild(note);
+  function proj(lat, lon) {
+    const w = el.clientWidth || 800, h = el.clientHeight || 500, pad = 40;
+    const k = Math.cos(43.65 * Math.PI / 180);
+    const sx = (w - 2 * pad) / ((box.e - box.w) * k), sy = (h - 2 * pad) / (box.n - box.s), s = Math.min(sx, sy);
+    const cx = (box.w + box.e) / 2, cy = (box.s + box.n) / 2;
+    return [w / 2 + (lon - cx) * k * s, h / 2 - (lat - cy) * s];
+  }
+  function draw() {
+    note.setAttribute("y", String((el.clientHeight || 500) - 12));
+    for (const it of items) it.draw();
+  }
+  window.addEventListener("resize", draw);
+  let car = null, carPos = [43.6383, -79.42], carShow = true;
+  return {
+    addCharger(c, style) {
+      const g = document.createElementNS(NS, "g");
+      const dot = document.createElementNS(NS, "circle");
+      const label = document.createElementNS(NS, "text");
+      label.textContent = c.name.replace(/ Charging$| Fast Charge$/, "");
+      label.setAttribute("font-size", "12"); label.setAttribute("fill", "#C9D6DF");
+      const title = document.createElementNS(NS, "title");
+      title.textContent = `${c.name} · $${(c.price_per_kwh_cents / 100).toFixed(2)}/kWh`;
+      g.append(dot, label, title); groups.chargers.appendChild(g);
+      let s = style;
+      const it = { draw() {
+        const [x, y] = proj(c.lat, c.lon);
+        dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("r", s.radius);
+        dot.setAttribute("fill", s.fillColor); dot.setAttribute("fill-opacity", s.fillOpacity);
+        dot.setAttribute("stroke", s.color); dot.setAttribute("stroke-width", s.weight || 2);
+        dot.setAttribute("stroke-dasharray", s.dashArray || "");
+        label.setAttribute("x", x + 13); label.setAttribute("y", y + 4);
+        g.style.display = (x < -50 || y < -50 || x > (el.clientWidth || 800) + 50) ? "none" : "";
+      } };
+      items.push(it); it.draw();
+      return { set(ns, text) { s = { ...s, ...ns }; if (text) title.textContent = `${c.name} · ${text}`; it.draw(); } };
+    },
+    setCar(lat, lon, show) {
+      carPos = [lat, lon]; carShow = show;
+      if (!car) {
+        car = document.createElementNS(NS, "foreignObject");
+        car.setAttribute("width", "90"); car.setAttribute("height", "28"); car.innerHTML = CAR_HTML;
+        groups.car.appendChild(car);
+        items.push({ draw() { const [x, y] = proj(carPos[0], carPos[1]);
+          car.setAttribute("x", x - 36); car.setAttribute("y", y - 34); car.style.display = carShow ? "" : "none"; } });
+      }
+      draw();
+    },
+    setFleet(cars) {
+      groups.fleet.innerHTML = "";
+      for (const c of cars) {
+        const [x, y] = proj(c.lat, c.lon);
+        const d = document.createElementNS(NS, "circle");
+        d.setAttribute("cx", x); d.setAttribute("cy", y); d.setAttribute("r", 5);
+        d.setAttribute("fill", c.soc_pct < 25 ? "#F5B83D" : "#4CC9F0");
+        groups.fleet.appendChild(d);
+      }
+    },
+    view(lat, lon, zoom) {
+      const span = zoom <= 12 ? [0.11, 0.24] : [0.02, 0.06];
+      box = { s: lat - span[0] / 2, n: lat + span[0] / 2, w: lon - span[1] / 2, e: lon + span[1] / 2 };
+      draw();
+    },
+  };
+}
+
+const mapApi = window.L ? leafletMap("map") : svgMap($("map"));
+const chargers = {};
+let state;
+
+function resetState() {
+  state = { since: 0, paid: 0, kwh: 0, txs: 0, stopped: 0, lost: 0, explorer: "" };
+  $("feed").innerHTML = "";
+  ["paid", "lost"].forEach((k) => $(k).textContent = "$0.00");
+  $("kwh").textContent = "0 kWh"; $("txs").textContent = "0"; $("stopped").textContent = "0";
+  mapApi.setFleet([]);
+  Object.values(chargers).forEach((c) => { c.flagged = false; c.handle.set(c.base); });
+}
+
+async function loadChargers() {
+  const r = await fetch("/api/chargers"); const cfg = await r.json();
+  for (const c of cfg.chargers) {
+    const attack = !!c.attack;
+    const base = { radius: attack ? 8 : 9, color: attack ? "#9FB4C2" : "#22C55E", weight: 2,
+      fillColor: attack ? "#24405A" : "#22C55E", fillOpacity: attack ? 0.6 : 0.35, dashArray: attack ? "3 3" : null };
+    chargers[c.id] = { base, handle: mapApi.addCharger(c, base), flagged: false };
+  }
+  mapApi.setCar(cfg.vehicle.lat, cfg.vehicle.lon, true);
+}
+
+function mark(id, colour, label) {
+  const c = chargers[id]; if (!c) return;
+  c.handle.set({ color: colour, fillColor: colour, fillOpacity: 0.75, dashArray: null, radius: 11 }, label);
+}
+
+function feed(e) {
+  if (!e.msg) return;
+  const div = document.createElement("div");
+  div.className = "ev " + (e.level || "info");
+  let tag = "";
+  if (e.kind === "guardian" && e.approved === false) tag = '<span class="tag deny">BLOCKED</span>';
+  else if (e.kind === "identity" && e.level === "deny") tag = '<span class="tag deny">CLONE</span>';
+  else if (e.kind === "dispute") tag = '<span class="tag deny">DISPUTE</span>';
+  else if (e.kind === "payment") tag = '<span class="tag money">PAID</span>';
+  else if (e.kind === "ai") tag = '<span class="tag ai">AI</span>';
+  else if (e.kind === "anchor") tag = '<span class="tag ok">ON-CHAIN</span>';
+  const link = e.tx_url ? ` <a href="${esc(e.tx_url)}" target="_blank" rel="noopener">${esc(e.tx_hash.slice(0, 14))}…</a>` : "";
+  div.innerHTML = `<span class="t">${esc((e.ts || "").slice(11, 16))}</span>${tag}${esc(e.msg)}${link}`;
+  const f = $("feed"); f.prepend(div);
+  while (f.children.length > 300) f.lastChild.remove();
+}
+
+function banner(text, colour) {
+  const b = $("banner"); b.textContent = text; b.style.borderColor = colour || "#22C55E"; b.style.display = "block";
+  clearTimeout(banner.t); banner.t = setTimeout(() => b.style.display = "none", 6000);
+}
+
+function handle(e) {
+  switch (e.kind) {
+    case "run":
+      $("mode").innerHTML = `${esc(e.mode)} · ${esc(e.transport)}`;
+      state.explorer = e.explorer_url || ""; break;
+    case "scene":
+      $("scene").innerHTML = `<div class="title">${esc(e.msg)}</div><div class="story">${esc(e.story || "")}</div>`;
+      if (e.scene === "fleet") { mapApi.setCar(43.6383, -79.42, false); mapApi.view(43.675, -79.40, 12); }
+      else mapApi.view(43.642, -79.418, 14);
+      break;
+    case "car_position":
+      if (e.car_id === "unit-07") mapApi.setCar(e.lat, e.lon, true);
+      if (e.soc_pct != null) { $("soc").textContent = e.soc_pct + "%"; $("socbar").style.width = e.soc_pct + "%"; }
+      break;
+    case "meter":
+      if (e.soc_pct != null) { $("soc").textContent = e.soc_pct + "%"; $("socbar").style.width = e.soc_pct + "%"; }
+      state.kwh += e.kwh_delivered || 0; $("kwh").textContent = (Math.round(state.kwh * 10) / 10) + " kWh";
+      if (e.level === "deny") mark(e.charger, "#F2545B", "Short delivery");
+      break;
+    case "payment":
+      state.paid += e.amount_cents || 0; state.txs += 1;
+      $("paid").textContent = usd(state.paid); $("txs").textContent = state.txs;
+      if (chargers[e.charger] && !chargers[e.charger].flagged) mark(e.charger, "#4CC9F0", "being paid per chunk");
+      break;
+    case "identity":
+      if (e.level === "deny") {
+        state.stopped += 1; mark(e.charger, "#F2545B", "cloned charger: blocked");
+        if (chargers[e.charger]) chargers[e.charger].flagged = true;
+        banner("Cloned charger blocked before the car moved", "#F2545B");
+      }
+      break;
+    case "guardian":
+      if (e.approved === false) {
+        state.stopped += 1;
+        if (chargers[e.charger]) { mark(e.charger, "#F2545B", "blocked: " + e.code); chargers[e.charger].flagged = true; }
+        banner("Guardian blocked: " + (e.reason || e.code), "#F2545B");
+      }
+      break;
+    case "dispute":
+      state.stopped += 1; banner("Short delivery: car stopped after one chunk", "#F2545B");
+      if (chargers[e.charger]) { mark(e.charger, "#F2545B", "short delivery"); chargers[e.charger].flagged = true; }
+      break;
+    case "summary":
+      state.lost = e.lost_to_bad_chargers_cents || 0; $("lost").textContent = usd(state.lost);
+      banner(e.msg, "#22C55E"); break;
+    case "fleet_tick":
+      mapApi.setFleet(e.cars); break;
+    case "fleet_summary": banner(e.msg, "#22C55E"); break;
+  }
+  if (e.kind === "scene_result" && e.results) {
+    for (const r of e.results) if (r.code === "short_delivery") { state.lost += r.paid_cents; $("lost").textContent = usd(state.lost); }
+  }
+  $("stopped").textContent = state.stopped;
+  feed(e);
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/events?since=" + state.since);
+    const data = await r.json();
+    if (data.reset) resetState();
+    for (const e of data.events) { if (e.seq === 0 && state.since > 0) resetState(); handle(e); state.since = e.seq + 1; }
+  } catch (err) { /* server restarting; try again */ }
+  setTimeout(poll, 500);
+}
+
+resetState();
+loadChargers().then(poll);
+</script>
+</body>
+</html>

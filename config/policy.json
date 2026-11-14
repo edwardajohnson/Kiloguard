@@ -1,0 +1,15 @@
+{
+  "max_per_session_cents": 4000,
+  "max_per_day_cents": 12000,
+  "max_price_per_kwh_cents": 45,
+  "min_charger_reputation": 4.0,
+  "chunk_kwh": 2.0,
+  "max_distance_to_charger_m": 15,
+  "max_sessions_per_hour": 3,
+  "meter_tolerance": 0.97,
+  "reserve_kwh": 6.0,
+  "opportunistic_soc": 0.70,
+  "search_radius_km": 8.0,
+  "payment_request_ttl_s": 120,
+  "kill_switch": false
+}
