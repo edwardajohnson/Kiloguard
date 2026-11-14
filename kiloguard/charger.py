@@ -27,6 +27,7 @@ from .util import haversine_m, tou_period
 
 class ChargerAgent:
     behaviour = "honest"
+    x402_version = 1
 
     def __init__(self, cfg: dict, signer, payout_address: str, registry, ledger, clock, events, policy,
                  network: str, asset: str):
@@ -69,6 +70,14 @@ class ChargerAgent:
 
     def deliver(self, kwh: float) -> float:
         return kwh
+
+    def prepare_requirements(self, session: dict, reqs: dict) -> tuple[dict, str | None]:
+        """Hook for a payment rail to add its own terms. The direct rail needs nothing extra."""
+        return reqs, None
+
+    def confirm_payment(self, session: dict, reqs: dict, tx_hash: str) -> tuple[bool, str]:
+        """Hook for a payment rail to confirm settlement after the on-chain check."""
+        return True, "ok"
 
     # --- protocol --------------------------------------------------------------------------
     def info(self) -> dict:
@@ -143,8 +152,11 @@ class ChargerAgent:
                     "pay_to": self.pay_to(s), "charger_agent_id": self.claimed_agent_id,
                     "nonce": secrets.token_hex(8),
                     "expires_at": (self.clock.now() + timedelta(seconds=self.ttl)).isoformat()}
+            reqs, error = self.prepare_requirements(s, reqs)
+            if error:
+                return 503, {}, {"error": "payment_rail_unavailable", "detail": error}
             s["pending"] = reqs
-            return 402, {}, {"x402Version": 1, "error": "payment_required", "accepts": [reqs]}
+            return 402, {}, {"x402Version": self.x402_version, "error": "payment_required", "accepts": [reqs]}
 
         reqs = s["pending"]
         proof = unb64json(header)
@@ -158,6 +170,9 @@ class ChargerAgent:
         ok, reason = self.ledger.verify_payment(tx_hash, s["wallet"], reqs["pay_to"], reqs["amount_cents"])
         if not ok:
             return 402, {}, {"error": "payment_not_verified", "detail": reason}
+        ok, reason = self.confirm_payment(s, reqs, tx_hash)
+        if not ok:
+            return 402, {}, {"error": "payment_not_confirmed", "detail": reason}
         self.used_tx.add(tx_hash)
         s["pending"] = None
         delivered = round(self.deliver(reqs["chunk_kwh"]), 4)
@@ -225,6 +240,61 @@ class BaitAndSwitchCharger(ChargerAgent):
         if index >= int(self.cfg.get("switch_after_chunks", 1)):
             return session["price"] + int(self.cfg.get("price_jump_cents", 12))
         return session["price"]
+
+
+class GoatFlowCharger(ChargerAgent):
+    """An honest charger that is a GOAT Flow merchant: every 2 kWh chunk is a GOAT Flow order.
+
+    On each 402 the charger creates the order through GOAT Flow's merchant API and passes GOAT's
+    terms to the car. The car's guardian pays on the order's chain; the charger delivers only after
+    the transfer checks out on-chain AND GOAT Flow reports the order paid.
+    """
+    behaviour = "honest"
+    x402_version = 2   # matches GOAT Flow's x402 v2 replies
+
+    def __init__(self, *args, goatflow=None, settings=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.goatflow = goatflow
+        self.gf_settings = settings
+        self.rail = "goatflow"
+
+    def prepare_requirements(self, session: dict, reqs: dict) -> tuple[dict, str | None]:
+        from .goatflow import extract_terms
+
+        st = self.gf_settings
+        amount_wei = reqs["amount_cents"] * 10 ** (st.goatflow_token_decimals - 2)
+        ref = f"kg-{reqs['session_id']}-{reqs['chunk_index']}-{reqs['nonce'][:6]}"
+        try:
+            code, body = self.goatflow.create_order(ref, st.goatflow_chain_id, st.goatflow_token_symbol,
+                                                   st.goatflow_token_contract, session["wallet"], amount_wei)
+        except Exception as exc:
+            return reqs, f"GOAT Flow unreachable: {exc}"
+        if code not in (200, 201, 402):
+            return reqs, f"GOAT Flow HTTP {code}: {body}"
+        terms = extract_terms(body)
+        if not terms["order_id"]:
+            return reqs, f"GOAT Flow reply had no order id: {body}"
+        if terms["amount_wei"] is not None and int(str(terms["amount_wei"])) != amount_wei:
+            return reqs, f"GOAT Flow quoted {terms['amount_wei']} units, expected {amount_wei}"
+        reqs = {**reqs, "scheme": "goatflow", "network": f"eip155:{st.goatflow_chain_id}",
+                "asset": st.goatflow_token_contract, "amount_units": str(amount_wei),
+                "pay_to": terms["pay_to"] or self.payout_address,
+                "goatflow_order_id": str(terms["order_id"]), "goatflow_ref": ref, "goatflow_terms": body}
+        if self.events:
+            self.events.emit("goatflow", f"GOAT Flow order {str(terms['order_id'])[:12]}… created for chunk "
+                             f"{reqs['chunk_index'] + 1} ({reqs['amount_cents']} cents)", level="info",
+                             charger=self.key, order_id=terms["order_id"], pay_to=reqs["pay_to"])
+        return reqs, None
+
+    def confirm_payment(self, session: dict, reqs: dict, tx_hash: str) -> tuple[bool, str]:
+        from .goatflow import PAID
+
+        status, body = self.goatflow.wait_confirmed(reqs["goatflow_order_id"], self.gf_settings.goatflow_confirm_timeout_s)
+        if self.events:
+            self.events.emit("goatflow", f"GOAT Flow order {reqs['goatflow_order_id'][:12]}… status {status}",
+                             level="ok" if status in PAID else "warn", charger=self.key,
+                             order_id=reqs["goatflow_order_id"], status=status, tx_hash=tx_hash)
+        return (True, status) if status in PAID else (False, f"GOAT Flow status {status}")
 
 
 BEHAVIOURS = {

@@ -14,7 +14,7 @@ November 13 to 15, 2026) by Edward Johnson and Yash Chitransh.
 
 | Scene | What happens | What stops it |
 |---|---|---|
-| 1. Happy path | Unit 07 compares 9 chargers on true cost, buys 18 kWh at Dufferin & King in nine $0.64 payments | Nothing: it works |
+| 1. Happy path | Unit 07 compares 9 chargers on true cost, buys 10 kWh at Dufferin & King in five $0.64 payments | Nothing: it works |
 | 2. Cloned charger | Front St advertises itself as Dufferin & King at a bait price | Quote signature does not match the registered key; the car never drives there |
 | 3. Redirected payment | King West, a real operator, asks to be paid at an attacker's wallet | Guardian refuses: payee is not the registered payout address. Attacker gets $0 |
 | 4. Short pour | Queen West takes payment for 2 kWh and delivers 1.4 | Signed meter reading fails the 97% check; car stops after one chunk ($0.54), files a dispute, reputation drops |
@@ -53,7 +53,7 @@ python scripts/run_demo.py --mode goat --scenes 1 --pace 0.5
 ```
 
 Every payment and receipt anchor in goat mode is a real transaction; the dashboard links each one to
-`explorer.testnet3.goat.network`. Scene 1 sends 10 transactions (9 chunks and 1 anchor); scenes 2 to 5 send
+`explorer.testnet3.goat.network`. Scene 1 sends 6 transactions (5 chunks and 1 anchor); scenes 2 to 5 send
 about 3 each. Use `--no-anchor` to skip anchors.
 
 **Payment asset.** Prices are always in US cents. With `PAYMENT_ASSET=native` the guardian pays in test BTC at

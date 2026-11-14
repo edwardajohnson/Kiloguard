@@ -43,7 +43,8 @@ class SessionBudget:
 
 class Guardian:
     def __init__(self, signer, policy, ledger, registry, events, clock, owner_approval=None,
-                 anchor_receipts: bool = True, label: str = "Guardian"):
+                 anchor_receipts: bool = True, label: str = "Guardian", anchor_ledger=None,
+                 trusted_settlement: set | None = None):
         self._signer = signer           # never exposed to the vehicle's AI
         self.policy = policy
         self.ledger = ledger
@@ -53,6 +54,9 @@ class Guardian:
         self.owner_approval = owner_approval
         self.anchor_receipts = anchor_receipts
         self.label = label
+        self.anchor_ledger = anchor_ledger or ledger      # receipts are anchored on GOAT even if payment is elsewhere
+        # Settlement addresses the fleet owner allows for GOAT Flow orders (when GOAT, not the merchant, is the payee)
+        self.trusted_settlement = {a.lower() for a in (trusted_settlement or set())}
         self.sessions: dict[str, SessionBudget] = {}
         self.spent_by_day: dict[str, int] = defaultdict(int)
         self.session_starts: list[datetime] = []
@@ -135,7 +139,9 @@ class Guardian:
             return self._decide(False, "bad_request", "Payment request has no valid expiry", amount, charger)
         if expires < self.clock.now():
             return self._decide(False, "expired", "Payment request has expired", amount, charger)
-        if (reqs.get("pay_to") or "").lower() != sess.payout_address.lower():
+        pay_to = (reqs.get("pay_to") or "").lower()
+        trusted_rail = reqs.get("scheme") == "goatflow" and pay_to in self.trusted_settlement
+        if pay_to != sess.payout_address.lower() and not trusted_rail:
             return self._decide(False, "payee_mismatch",
                                 f"{sess.charger_name} asked to be paid at {str(reqs.get('pay_to'))[:10]}…, but its "
                                 f"registered payout address is {sess.payout_address[:10]}…: payment redirection",
@@ -168,7 +174,7 @@ class Guardian:
                              charger=charger)
 
         try:
-            tx_hash = self.ledger.pay(self._signer, sess.payout_address, amount,
+            tx_hash = self.ledger.pay(self._signer, reqs["pay_to"] if trusted_rail else sess.payout_address, amount,
                                       memo=f"{sess.session_id}#{reqs.get('chunk_index')}")
         except Exception as exc:
             return self._decide(False, "payment_failed", f"Payment could not be sent: {exc}", amount, charger)
@@ -185,8 +191,9 @@ class Guardian:
                                 f"{usd(amount)} to {sess.charger_name}", amount, charger, quiet=True)
         decision.tx_hash = tx_hash
         decision.payload = b64json(proof)
+        via = f" via GOAT Flow order {str(reqs.get('goatflow_order_id'))[:10]}…" if reqs.get("goatflow_order_id") else ""
         self.events.emit("payment", f"Paid {usd(amount)} for chunk {int(reqs.get('chunk_index', 0)) + 1} "
-                         f"({kwh:g} kWh) to {sess.charger_name}", level="money", charger=charger,
+                         f"({kwh:g} kWh) to {sess.charger_name}{via} on {self.ledger.name}", level="money", charger=charger,
                          amount_cents=amount, tx_hash=tx_hash, tx_url=self.ledger.tx_url(tx_hash),
                          session_paid_cents=sess.paid_cents, guardian=self.address)
         return decision
@@ -212,11 +219,11 @@ class Guardian:
             return None
         digest = sha256_hex(canonical(receipt))
         try:
-            tx = self.ledger.anchor(self._signer, digest)
+            tx = self.anchor_ledger.anchor(self._signer, digest)
         except Exception as exc:
             self.events.emit("anchor", f"Receipt anchoring failed: {exc}", level="warn")
             return None
-        self.events.emit("anchor", f"Receipt hash anchored on {self.ledger.name}", level="ok", digest=digest,
-                         tx_hash=tx, tx_url=self.ledger.tx_url(tx), session_id=receipt.get("session_id"),
+        self.events.emit("anchor", f"Receipt hash anchored on {self.anchor_ledger.name}", level="ok", digest=digest,
+                         tx_hash=tx, tx_url=self.anchor_ledger.tx_url(tx), session_id=receipt.get("session_id"),
                          charger=receipt.get("charger_agent_id"))
         return tx

@@ -82,9 +82,10 @@ class GoatLedger:
         except ImportError as exc:
             raise RuntimeError("goat mode needs web3: pip install -r requirements.txt") from exc
         self.settings = settings
+        self.name = getattr(settings, "ledger_name", "") or self.name
         self.w3 = Web3(Web3.HTTPProvider(settings.rpc_url, request_kwargs={"timeout": 30}))
         if not self.w3.is_connected():
-            raise RuntimeError(f"Cannot reach GOAT RPC at {settings.rpc_url}")
+            raise RuntimeError(f"Cannot reach the RPC at {settings.rpc_url}")
         chain_id = self.w3.eth.chain_id
         if chain_id != settings.chain_id:
             raise RuntimeError(f"RPC is chain {chain_id}, expected {settings.chain_id}")

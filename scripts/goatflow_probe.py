@@ -36,9 +36,11 @@ def main() -> None:
     client = GoatFlowClient(env("GOATFLOW_API_KEY"), env("GOATFLOW_API_SECRET"), env("GOATFLOW_MERCHANT_ID"),
                             env("GOATFLOW_API_URL", TESTNET3_API))
     order_ref = f"kiloguard-probe-{int(time.time())}"
+    # The chain the merchant accepts this token on (Crypto Payments page): 48816 GOAT Testnet3, 11155111 Sepolia
+    chain_id = int(env("GOATFLOW_CHAIN_ID", str(settings.chain_id)))
     print(f"Creating order {order_ref}: {amount_wei} units of {env('GOATFLOW_TOKEN_SYMBOL')} "
-          f"from {payer} on chain {settings.chain_id}\n")
-    status, body = client.create_order(order_ref, settings.chain_id, env("GOATFLOW_TOKEN_SYMBOL"),
+          f"from {payer} on chain {chain_id}\n")
+    status, body = client.create_order(order_ref, chain_id, env("GOATFLOW_TOKEN_SYMBOL"),
                                        env("GOATFLOW_TOKEN_CONTRACT"), payer, amount_wei)
     print(f"HTTP {status} (402 is expected: it carries the payment terms)")
     print(json.dumps(body, indent=2))

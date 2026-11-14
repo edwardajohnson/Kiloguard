@@ -60,6 +60,52 @@ class GoatFlowClient:
         return r.status_code, _json(r)
 
 
+    def wait_confirmed(self, order_id: str, timeout_s: int = 120, interval_s: float = 3.0) -> tuple[str, dict]:
+        """Polls the order until GOAT reports paid, failed, or the timeout passes. Returns (status, body)."""
+        deadline = time.time() + timeout_s
+        status, body = "UNKNOWN", {}
+        while time.time() < deadline:
+            code, body = self.get_order(order_id)
+            status = str(find(body, "status") or "UNKNOWN").upper()
+            if status in PAID or status in FAILED or code in (401, 403, 404):
+                return status, body
+            time.sleep(interval_s)
+        return status, body
+
+
+def find(obj, *names):
+    """Depth-first search for the first value under any of `names` (case-insensitive) in nested JSON."""
+    wanted = {n.lower() for n in names}
+    stack = [obj]
+    while stack:
+        cur = stack.pop(0)
+        if isinstance(cur, dict):
+            for k, v in cur.items():
+                if k.lower() in wanted and v not in (None, ""):
+                    return v
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+    return None
+
+
+def extract_terms(body: dict) -> dict:
+    """Pulls the payment terms out of GOAT Flow's 402 reply.
+
+    GOAT's docs do not publish the full reply schema, so this looks under the usual names
+    (GOAT Flow, x402 and camelCase variants). The raw reply is always kept alongside.
+    """
+    return {
+        "order_id": find(body, "order_id", "orderId", "id"),
+        "pay_to": find(body, "pay_to", "payTo", "to_address", "toAddress", "receiving_address", "recipient"),
+        "amount_wei": find(body, "amount_wei", "amountWei", "maxAmountRequired", "amount"),
+        "token_contract": find(body, "token_contract", "tokenContract", "asset"),
+        "chain_id": find(body, "chain_id", "chainId"),
+        "expires_at": find(body, "expiresAt", "expires_at", "expiry"),
+        "typed_data": find(body, "eip712", "typedData", "typed_data", "calldataSignRequest", "sign_data"),
+    }
+
+
 def _json(resp) -> dict:
     try:
         return resp.json()

@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from .charger import BEHAVIOURS, ChargerAgent
+from .charger import BEHAVIOURS, ChargerAgent, GoatFlowCharger
 from .config import Settings, load_json
 from .crypto import make_signer, sign_obj
 from .events import EventBus
@@ -105,6 +105,22 @@ def build_world(settings: Settings | None = None, events: EventBus | None = None
             events.emit("run", f"No key for {', '.join(missing)}: using simulation keys for those roles "
                         "(fine for receiving payments, not for paying)", level="warn")
     ledger = GoatLedger(settings) if settings.mode == "goat" else SimLedger()
+    pay_ledger, goatflow = ledger, None
+    if settings.payment_rail == "goatflow":
+        if settings.mode != "goat":
+            raise SystemExit("PAYMENT_RAIL=goatflow needs KILOGUARD_MODE=goat")
+        missing = [n for n in ("goatflow_api_key", "goatflow_api_secret", "goatflow_merchant_id",
+                               "goatflow_token_contract") if not getattr(settings, n)]
+        if missing:
+            raise SystemExit("PAYMENT_RAIL=goatflow needs " + ", ".join(m.upper() for m in missing) + " in .env")
+        from .goatflow import GoatFlowClient
+
+        pay_ledger = GoatLedger(settings.payment_chain_settings())
+        goatflow = GoatFlowClient(settings.goatflow_api_key, settings.goatflow_api_secret,
+                                  settings.goatflow_merchant_id, settings.goatflow_api_url)
+        events.emit("run", f"Payment rail: GOAT Flow merchant '{settings.goatflow_merchant_id}', orders settle in "
+                    f"{settings.goatflow_token_symbol} on {pay_ledger.name}; receipts anchored on {ledger.name}",
+                    level="info")
     if settings.identity == "erc8004":
         if settings.mode != "goat" or not settings.erc8004_registry:
             raise ValueError("IDENTITY=erc8004 needs KILOGUARD_MODE=goat and ERC8004_IDENTITY_REGISTRY")
@@ -125,8 +141,12 @@ def build_world(settings: Settings | None = None, events: EventBus | None = None
         signer = operators.get(c.get("key", "sim")) or make_signer("operator-" + c["id"])
         behaviour = c.get("behaviour", "honest")
         kwargs = {"redirect_to": attacker.address} if behaviour == "redirect" else {}
-        agent = BEHAVIOURS[behaviour](c, signer, signer.address, registry, ledger, clock, events, policy,
-                                      settings.network_label, settings.asset_label, **kwargs)
+        cls, charger_ledger = BEHAVIOURS[behaviour], pay_ledger   # every charger checks the asset the guardian pays in
+        if goatflow is not None and c.get("key") == "A":   # Dufferin & King is the GOAT Flow merchant
+            cls, charger_ledger = GoatFlowCharger, pay_ledger
+            kwargs = {"goatflow": goatflow, "settings": settings}
+        agent = cls(c, signer, signer.address, registry, charger_ledger, clock, events, policy,
+                    settings.network_label, settings.asset_label, **kwargs)
         chargers[c["id"]] = agent
         if behaviour != "clone":  # a clone has no identity of its own; it borrows someone else's
             registry.register(AgentRecord(c["id"], c["name"], "charger", signer.address, signer.address,
@@ -139,8 +159,9 @@ def build_world(settings: Settings | None = None, events: EventBus | None = None
     v = cfg["vehicle"]
     guardian_signer = make_signer(f"{v['id']}-guardian", settings.private_key("GUARDIAN"))
     identity = make_signer(v["id"], settings.private_key("VEHICLE"))
-    guardian = Guardian(guardian_signer, policy, ledger, registry, events, clock, owner_approval=owner_approval,
-                        anchor_receipts=settings.anchor_receipts, label=f"{v['name']} guardian")
+    guardian = Guardian(guardian_signer, policy, pay_ledger, registry, events, clock, owner_approval=owner_approval,
+                        anchor_receipts=settings.anchor_receipts, label=f"{v['name']} guardian",
+                        anchor_ledger=ledger, trusted_settlement=settings.trusted_settlement_addresses)
     vehicle_rec = registry.register(AgentRecord(v["id"], v["name"], "vehicle", identity.address, guardian.address))
     if isinstance(registry, Erc8004Registry):
         registry.feedback_signer = guardian_signer   # the car's wallet is the "client" that rates chargers

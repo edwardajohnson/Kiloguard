@@ -28,18 +28,18 @@ def make_world(tmp_path, transport="local", **kw):
 
 # --- the five demo scenes ----------------------------------------------------------------------
 
-def test_happy_path_buys_18_kwh_in_nine_metered_chunks(tmp_path):
+def test_happy_path_buys_10_kwh_in_five_metered_chunks(tmp_path):
     w = make_world(tmp_path)
     results = run_scene(w, 1)
     assert len(results) == 1 and results[0].ok
     r = results[0]
     assert r.charger_id == "dufferin"
-    assert r.kwh == pytest.approx(18.0)
-    assert r.paid_cents == 576 and len(r.tx_hashes) == 9
-    assert r.receipt["status"] == "released" and r.receipt["paid_cents"] == 576
+    assert r.kwh == pytest.approx(10.0)
+    assert r.paid_cents == 320 and len(r.tx_hashes) == 5
+    assert r.receipt["status"] == "released" and r.receipt["paid_cents"] == 320
     assert r.anchor_tx
     dufferin = w.registry.lookup("dufferin").payout_address
-    assert w.ledger.balance_cents(dufferin) == 576
+    assert w.ledger.balance_cents(dufferin) == 320
 
 
 def test_cloned_charger_is_blocked_before_the_car_moves(tmp_path):
@@ -101,7 +101,7 @@ def test_scenes_work_over_real_http(tmp_path):
     w = make_world(tmp_path, transport="http")
     try:
         results = run_scene(w, 1)
-        assert results[0].ok and results[0].paid_cents == 576
+        assert results[0].ok and results[0].paid_cents == 320
         results = run_scene(w, 3)
         assert results[0].code == "payee_mismatch"
     finally:
@@ -120,12 +120,12 @@ def test_kill_switch_stops_everything(tmp_path):
 
 def test_daily_cap_escalates_to_owner(tmp_path):
     w = make_world(tmp_path)
-    w.policy.max_per_day_cents = 500
+    w.policy.max_per_day_cents = 300
     results = run_scene(w, 1)
-    assert results[0].code == "daily_cap" and results[0].paid_cents == 448  # 7 chunks; the 8th would pass $5.00
+    assert results[0].code == "daily_cap" and results[0].paid_cents == 256  # 4 chunks; the 5th would pass $3.00
     asked = []
     w2 = make_world(tmp_path / "b", owner_approval=lambda amount, why: asked.append(amount) or True)
-    w2.policy.max_per_day_cents = 500
+    w2.policy.max_per_day_cents = 300
     results = run_scene(w2, 1)
     assert results[0].ok and asked
 

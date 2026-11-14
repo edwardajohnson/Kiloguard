@@ -55,6 +55,22 @@ class Settings:
     backboard_model: str = "gpt-4o"
     anchor_receipts: bool = True
     events_path: Path = ROOT / "runs" / "events.jsonl"
+    # Payment rail. "direct": the guardian pays the charger on GOAT and proves it by tx hash.
+    # "goatflow": Dufferin & King is a GOAT Flow merchant; every chunk is a GOAT Flow order.
+    payment_rail: str = "direct"
+    goatflow_api_url: str = "https://flow-api.testnet3.goat.network"
+    goatflow_merchant_id: str = ""
+    goatflow_api_key: str = ""
+    goatflow_api_secret: str = ""
+    goatflow_chain_id: int = 48816
+    goatflow_token_symbol: str = "USDC"
+    goatflow_token_contract: str = ""
+    goatflow_token_decimals: int = 6
+    goatflow_confirm_timeout_s: int = 120
+    payment_rpc_url: str = ""              # RPC of the chain GOAT Flow orders settle on (defaults by chain id)
+    payment_explorer_url: str = ""
+    trusted_settlement: str = ""           # comma list of GOAT Flow settlement addresses the owner allows as payee
+    ledger_name: str = ""
 
     @classmethod
     def load(cls, **overrides) -> "Settings":
@@ -76,6 +92,19 @@ class Settings:
             backboard_provider=env("BACKBOARD_PROVIDER", "openai"),
             backboard_model=env("BACKBOARD_MODEL", "gpt-4o"),
             anchor_receipts=env("ANCHOR_RECEIPTS", "1") not in ("0", "false", "no"),
+            payment_rail=env("PAYMENT_RAIL", "direct"),
+            goatflow_api_url=env("GOATFLOW_API_URL", cls.goatflow_api_url),
+            goatflow_merchant_id=env("GOATFLOW_MERCHANT_ID"),
+            goatflow_api_key=env("GOATFLOW_API_KEY"),
+            goatflow_api_secret=env("GOATFLOW_API_SECRET"),
+            goatflow_chain_id=int(env("GOATFLOW_CHAIN_ID", "48816")),
+            goatflow_token_symbol=env("GOATFLOW_TOKEN_SYMBOL", "USDC"),
+            goatflow_token_contract=env("GOATFLOW_TOKEN_CONTRACT"),
+            goatflow_token_decimals=int(env("GOATFLOW_TOKEN_DECIMALS", "6")),
+            goatflow_confirm_timeout_s=int(env("GOATFLOW_CONFIRM_TIMEOUT_S", "120")),
+            payment_rpc_url=env("PAYMENT_RPC_URL"),
+            payment_explorer_url=env("PAYMENT_EXPLORER_URL"),
+            trusted_settlement=env("TRUSTED_SETTLEMENT"),
         )
         for key, value in overrides.items():
             if value is not None:
@@ -85,6 +114,22 @@ class Settings:
         if s.payment_asset == "erc20" and not s.stablecoin_address:
             raise ValueError("PAYMENT_ASSET=erc20 needs STABLECOIN_ADDRESS")
         return s
+
+    def payment_chain_settings(self) -> "Settings":
+        """Settings for the ledger that GOAT Flow orders settle on (GOAT Testnet3 or Ethereum Sepolia)."""
+        from dataclasses import replace
+
+        known = {48816: ("https://rpc.testnet3.goat.network", "https://explorer.testnet3.goat.network", "GOAT Testnet3"),
+                 11155111: ("https://ethereum-sepolia-rpc.publicnode.com", "https://sepolia.etherscan.io",
+                            "Ethereum Sepolia")}
+        rpc, explorer, name = known.get(self.goatflow_chain_id, ("", "", f"chain {self.goatflow_chain_id}"))
+        return replace(self, rpc_url=self.payment_rpc_url or rpc, explorer_url=(self.payment_explorer_url or explorer),
+                       chain_id=self.goatflow_chain_id, payment_asset="erc20",
+                       stablecoin_address=self.goatflow_token_contract, ledger_name=name)
+
+    @property
+    def trusted_settlement_addresses(self) -> set[str]:
+        return {a.strip().lower() for a in self.trusted_settlement.split(",") if a.strip()}
 
     @property
     def asset_label(self) -> str:

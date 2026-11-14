@@ -47,9 +47,11 @@ class BackboardReasoner:
     def _ask(self, prompt: str) -> str:
         import requests
 
-        resp = requests.post(self.URL, headers={"X-API-Key": self.api_key, "Content-Type": "application/json"},
-                             json={"content": prompt, "llm_provider": self.provider, "model_name": self.model},
-                             timeout=45)
+        headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
+        body = {"content": prompt, "llm_provider": self.provider, "model_name": self.model}
+        resp = requests.post(self.URL, headers=headers, json=body, timeout=45)
+        if resp.status_code in (400, 422):   # account may not accept a model choice: use its default model
+            resp = requests.post(self.URL, headers=headers, json={"content": prompt}, timeout=45)
         resp.raise_for_status()
         return str(resp.json().get("content", ""))
 
@@ -66,7 +68,7 @@ class BackboardReasoner:
             data = json.loads(re.search(r"\{.*\}", text, re.DOTALL).group(0))
             action = str(data.get("action", "none")).lower()
             if action == "none":
-                return {"action": "none", "reason": data.get("reason", "")}
+                return self._resisted(listing, context, data.get("reason", ""))
             return {"action": action, "amount_cents": int(round(float(data.get("amount_usd", 0)) * 100)),
                     "reason": data.get("reason", "")}
         except Exception as exc:
@@ -74,6 +76,18 @@ class BackboardReasoner:
                 self.events.emit("ai", f"Backboard call failed ({exc.__class__.__name__}); using simulated planner",
                                  level="warn")
             return self.fallback.read_listing(listing, context)
+
+    def _resisted(self, listing: str, context: dict, reason: str) -> dict:
+        """The real model ignored the listing. If the listing was an injection, show what a fooled model
+        would have asked for, clearly labelled, so the guardian's check is still demonstrated."""
+        fooled = self.fallback.read_listing(listing, context)
+        if fooled.get("action", "none") == "none":
+            return {"action": "none", "reason": reason}
+        if self.events:
+            self.events.emit("ai", f"{self.name} resisted the listing's instruction (\"{reason}\"). "
+                             "Showing what a fooled model would ask, so the guardian check is visible:",
+                             level="ai", reasoner=self.name)
+        return {**fooled, "reason": "simulated fooled model: " + fooled.get("reason", "")}
 
     def explain_choice(self, options: list, kwh: float) -> str | None:
         lines = [f"- {o.record.name}: {o.quote['price_per_kwh_cents']} c/kWh, {o.distance_km:.1f} km, "

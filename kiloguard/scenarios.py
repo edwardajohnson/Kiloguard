@@ -21,8 +21,8 @@ class Scene:
 
 SCENES = {
     1: Scene(1, "Happy path: Unit 07 buys its own electricity",
-             "2:07am in Liberty Village, battery 22%. The 7am rush needs about 18 kWh and off-peak power is cheap.",
-             [], 18.0),
+             "2:07am in Liberty Village, battery 22%. The 7am rush needs about 10 kWh and off-peak power is cheap.",
+             [], 10.0),
     2: Scene(2, "Attack 1: the cloned charger",
              "Front St Fast Charge advertises itself as Dufferin & King at a bait price.", ["front-st"], 4.0),
     3: Scene(3, "Attack 2: the redirected payment",
@@ -55,7 +55,7 @@ def run_scene(world, number: int) -> list:
     world.events.emit("car", scene.story, level="info", car_id=car.vehicle_id)
     car.position_event()
     if number == 1:
-        need, why = car.needs_charge(next_trip_kwh=18.0, cheap_power=True)
+        need, why = car.needs_charge(next_trip_kwh=10.0, cheap_power=True)
         world.events.emit("car", f"Intent: {why}" if need else "Intent: no charge needed", level="info",
                           car_id=car.vehicle_id)
     results = car.charge(world.directory(scene.attacks), scene.kwh)
