@@ -28,7 +28,7 @@ November 13 to 15, 2026) by Edward Johnson and Yash Chitransh.
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/run_demo.py                              # scenes 1-5 in the terminal
-python -m pytest -q                                     # 22 tests
+python -m pytest -q                                     # 33 tests
 ```
 
 Live dashboard (two terminals):
@@ -120,8 +120,9 @@ no money moves. If a Backboard call fails, the demo falls back to the simulated 
 
 ## Payment and value flow
 
-Prices are set in US cents. On GOAT Network Testnet3 (chain ID 48816) the car pays in test BTC at a fixed demo
-rate, or in a test stablecoin once one is confirmed; the demo also runs on a simulated ledger.
+Prices are set in US cents. On GOAT Network Testnet3 (chain ID 48816) the car pays in test USDC through the
+GOAT Flow merchant API (x402 v2, `PAYMENT_RAIL=goatflow`): every 2 kWh chunk is one GOAT Flow order, confirmed
+by GOAT before the charger delivers. Gas is paid in test BTC. The demo also runs on a simulated ledger.
 
 1. **Funding.** The fleet owner funds the car's wallet, which only the guardian controls, and signs a policy:
    $40 per session, $120 per day, $0.45 per kWh, minimum charger reputation 4.0, 3 sessions per hour.
@@ -172,6 +173,8 @@ facilitator can replace `GoatLedger` without touching the guardian.
 | Component | Use | Licence |
 |---|---|---|
 | GOAT Network Testnet3 | Settlement and receipt anchors | Public network |
+| GOAT Flow merchant API (x402 v2) | One order per 2 kWh chunk, settled in USDC | GOAT Network terms of service |
+| Test USDC on GOAT Testnet3 | Payment asset (testnet only) | Testnet token |
 | x402 (HTTP 402 payment pattern) | Payment request and proof headers | Apache-2.0 (spec) |
 | ERC-8004 (GOAT Testnet3 registries) | Agent identity and reputation | CC0 (EIP) |
 | Backboard.io | Optional LLM reasoning | Proprietary API |
