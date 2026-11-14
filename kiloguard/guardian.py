@@ -217,5 +217,6 @@ class Guardian:
             self.events.emit("anchor", f"Receipt anchoring failed: {exc}", level="warn")
             return None
         self.events.emit("anchor", f"Receipt hash anchored on {self.ledger.name}", level="ok", digest=digest,
-                         tx_hash=tx, tx_url=self.ledger.tx_url(tx))
+                         tx_hash=tx, tx_url=self.ledger.tx_url(tx), session_id=receipt.get("session_id"),
+                         charger=receipt.get("charger_agent_id"))
         return tx

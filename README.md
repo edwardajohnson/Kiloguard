@@ -28,7 +28,7 @@ November 13 to 15, 2026) by Edward Johnson and Yash Chitransh.
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/run_demo.py                              # scenes 1-5 in the terminal
-python -m pytest -q                                     # 15 tests
+python -m pytest -q                                     # 22 tests
 ```
 
 Live dashboard (two terminals):
@@ -38,7 +38,8 @@ python dashboard/server.py                              # open http://127.0.0.1:
 python scripts/run_demo.py --pace 0.8 --fleet           # scenes, then the fleet day
 ```
 
-The dashboard uses street tiles when online and switches to a built-in offline map otherwise.
+The dashboard uses OpenStreetMap tiles (no API key) when online and falls back to a built-in map otherwise.
+Open `http://127.0.0.1:8000/?map=offline` to force the built-in map, for example on unreliable venue Wi-Fi.
 Add `--transport http` to run every charger as a real HTTP server that answers `402 Payment Required`.
 
 ## Real payments on GOAT Testnet3
@@ -60,10 +61,25 @@ about 3 each. Use `--no-anchor` to skip anchors.
 GOAT is confirmed, set `PAYMENT_ASSET=erc20` and `STABLECOIN_ADDRESS`; the guardian then sends ERC-20 transfers
 and chargers verify the `Transfer` event.
 
-**ERC-8004 identity (optional).** Register the charger agents with GOAT's AgentKit, put each agent id in
-`config/chargers.json` (`erc8004_agent_id`), and set `IDENTITY=erc8004` and `ERC8004_IDENTITY_REGISTRY`.
-KiloGuard then reads each charger's wallet from the registry (`agentWallet` metadata, else the token owner),
-so signing and payout addresses come from the chain, not from config.
+**ERC-8004 identity and reputation on GOAT.** No AgentKit or TypeScript needed:
+
+```bash
+python scripts/register_agents.py --dry-run   # Unit 07 (by OWNER), Dufferin (CHARGER_A), four scene chargers (CHARGER_B)
+python scripts/register_agents.py             # registers them; agent ids are saved into config/chargers.json
+# then set IDENTITY=erc8004 in .env
+python scripts/run_demo.py --mode goat --scenes 1,2,4 --pace 0.5
+```
+
+The registering wallets need a little test BTC for gas. With `IDENTITY=erc8004`, each charger's signing and payout
+address is read from GOAT's identity registry (`getAgentWallet`, else the token owner), so the clone in scene 2 is
+caught against the chain, not a config file. Every rating the car gives (5 for a good session, 1 for a short pour
+or a redirect) is also written to GOAT's ERC-8004 reputation registry from the car's wallet, so the whole fleet can
+read it. Registry addresses (Testnet3): identity `0x54B8d8E2455946f2A5B8982283f2359812e815ce`, reputation
+`0xd9140951d8aE6E5F625a02F5908535e16e3af964`. Set `ONCHAIN_REPUTATION=0` to keep ratings local.
+
+**Verify any receipt.** `python scripts/verify_receipts.py` checks every session from the last run: the charger's
+signed receipt, its hash against the anchored hash, the payments against the receipt total and, in goat mode, the
+anchor and payment transactions on GOAT. The dashboard has the same check as a **Verify receipt** button.
 
 **Separate charger processes.** In goat mode the chain is the shared ledger, so chargers can run as their own
 servers: `python -m kiloguard.charger_server --all`, then `python scripts/run_demo.py --transport http --external`.
@@ -95,7 +111,8 @@ no money moves. If a Backboard call fails, the demo falls back to the simulated 
 | `kiloguard/vehicle.py` | Intent, discovery, true-cost ranking, handshake, chunk loop, meter checks, disputes, receipts |
 | `kiloguard/charger.py` | x402-style charger protocol and the five attack behaviours |
 | `kiloguard/ledger.py` | Simulated ledger and GOAT Testnet3 ledger (native test BTC or ERC-20) |
-| `kiloguard/identity.py` | Identity registry and reputation; ERC-8004 reader |
+| `kiloguard/identity.py` | Identity registry and reputation; ERC-8004 identity and reputation on GOAT |
+| `kiloguard/verify.py` | Independent receipt verification (CLI and dashboard button) |
 | `kiloguard/reasoning.py` | Simulated planner and Backboard.io planner |
 | `kiloguard/scenarios.py`, `simulator.py` | The demo night and the 20-car fleet day |
 | `dashboard/` | Live map and decision feed |
@@ -156,7 +173,7 @@ facilitator can replace `GoatLedger` without touching the guardian.
 |---|---|---|
 | GOAT Network Testnet3 | Settlement and receipt anchors | Public network |
 | x402 (HTTP 402 payment pattern) | Payment request and proof headers | Apache-2.0 (spec) |
-| ERC-8004 | Optional on-chain agent identity | CC0 (EIP) |
+| ERC-8004 (GOAT Testnet3 registries) | Agent identity and reputation | CC0 (EIP) |
 | Backboard.io | Optional LLM reasoning | Proprietary API |
 | Python 3.10+ | Runtime | PSF |
 | Starlette, Uvicorn | Charger servers and dashboard | BSD-3-Clause |
@@ -164,7 +181,7 @@ facilitator can replace `GoatLedger` without touching the guardian.
 | web3.py, eth-account | GOAT transactions and signatures | MIT |
 | pytest | Tests | MIT |
 | Leaflet (unpkg) | Dashboard map | BSD-2-Clause |
-| OpenStreetMap data, CARTO tiles | Map tiles | ODbL; CARTO attribution |
+| OpenStreetMap data and tiles | Dashboard map tiles (no API key) | ODbL; OSM tile usage policy |
 | Inter, JetBrains Mono (Google Fonts) | Dashboard type | OFL-1.1 |
 | KiloGuard | This repository | Apache-2.0 |
 

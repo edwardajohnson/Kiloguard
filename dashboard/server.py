@@ -52,10 +52,20 @@ def make_app(events_path: Path) -> Starlette:
         cfg = load_json("chargers.json")
         return JSONResponse({"vehicle": cfg["vehicle"], "chargers": cfg["chargers"]})
 
+    async def verify(request: Request):
+        from starlette.concurrency import run_in_threadpool
+
+        from kiloguard.verify import load_events, verify_session
+
+        sid = request.query_params.get("session_id", "")
+        result = await run_in_threadpool(verify_session, load_events(events_path), sid, Settings.load().rpc_url)
+        return JSONResponse(result)
+
     return Starlette(routes=[
         Route("/", index),
         Route("/api/events", events),
         Route("/api/chargers", chargers),
+        Route("/api/verify", verify),
         Mount("/static", StaticFiles(directory=STATIC), name="static"),
     ])
 

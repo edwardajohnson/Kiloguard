@@ -49,8 +49,10 @@ def main() -> None:
     for role, address in created:
         print(f"{role:<10} {address}")
     print("\nKeys saved to .env (permissions 600). Store the same keys in your shared Bitwarden note.")
-    print("Fund GUARDIAN (and OWNER) from https://bridge.testnet3.goat.network/faucet, then run:")
-    print("  python scripts/goat_check.py")
+    print("Fund from https://bridge.testnet3.goat.network/faucet:")
+    print("  GUARDIAN   always (it pays the chargers and the gas)")
+    print("  OWNER, CHARGER_A, CHARGER_B   a little, only for scripts/register_agents.py (ERC-8004)")
+    print("Then run: python scripts/goat_check.py")
 
 
 if __name__ == "__main__":

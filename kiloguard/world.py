@@ -108,7 +108,8 @@ def build_world(settings: Settings | None = None, events: EventBus | None = None
     if settings.identity == "erc8004":
         if settings.mode != "goat" or not settings.erc8004_registry:
             raise ValueError("IDENTITY=erc8004 needs KILOGUARD_MODE=goat and ERC8004_IDENTITY_REGISTRY")
-        registry = Erc8004Registry(ledger.w3, settings.erc8004_registry, events)
+        registry = Erc8004Registry(ledger, settings.erc8004_registry, settings.erc8004_reputation, events,
+                                   onchain_feedback=settings.onchain_reputation)
     else:
         registry = LocalRegistry(events)
 
@@ -140,7 +141,13 @@ def build_world(settings: Settings | None = None, events: EventBus | None = None
     identity = make_signer(v["id"], settings.private_key("VEHICLE"))
     guardian = Guardian(guardian_signer, policy, ledger, registry, events, clock, owner_approval=owner_approval,
                         anchor_receipts=settings.anchor_receipts, label=f"{v['name']} guardian")
-    registry.register(AgentRecord(v["id"], v["name"], "vehicle", identity.address, guardian.address))
+    vehicle_rec = registry.register(AgentRecord(v["id"], v["name"], "vehicle", identity.address, guardian.address))
+    if isinstance(registry, Erc8004Registry):
+        registry.feedback_signer = guardian_signer   # the car's wallet is the "client" that rates chargers
+        if v.get("erc8004_agent_id") is not None:
+            vehicle_rec.onchain_id = int(v["erc8004_agent_id"])
+            events.emit("identity", f"{v['name']} is ERC-8004 agent #{vehicle_rec.onchain_id} on GOAT",
+                        level="ok", car_id=v["id"], onchain_id=vehicle_rec.onchain_id)
     if isinstance(ledger, SimLedger):
         ledger.fund(guardian.address, SIM_STARTING_BALANCE_CENTS)
     car = VehicleAgent(v["id"], identity, make_attestation(owner, v["id"], identity, guardian), guardian, registry,

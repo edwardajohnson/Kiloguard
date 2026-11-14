@@ -55,6 +55,17 @@
   #banner { position: fixed; left: 50%; top: 84px; transform: translateX(-50%); background: var(--navy);
     border: 2px solid var(--green); border-radius: 12px; padding: 14px 22px; font-size: 18px; font-weight: 600;
     display: none; max-width: 80vw; text-align: center; z-index: 1000; }
+  button.verify { margin-left: 8px; font: 600 12px Inter, sans-serif; color: #06210F; background: var(--green);
+    border: 0; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+  #verifybox { position: fixed; right: 24px; bottom: 140px; width: min(520px, calc(100vw - 32px)); z-index: 1001;
+    display: none; background: var(--navy); border: 2px solid var(--green); border-radius: 12px; padding: 14px 18px; }
+  #verifybox .vh { font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+  #verifybox .pass { color: var(--green); } #verifybox .fail { color: var(--red); }
+  #verifybox ul { list-style: none; padding: 0; margin: 0 0 10px; font-size: 14px; line-height: 1.5; }
+  #verifybox li { margin: 4px 0; }
+  #verifybox a { color: var(--cyan); font-size: 13px; display: block; margin-bottom: 8px; }
+  #verifybox button.close { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 600 12px Inter, sans-serif; }
   .leaflet-container { background: #0E1B26; }
   .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.85) saturate(0.6); }
   .leaflet-tooltip { font-family: Inter, sans-serif; }
@@ -85,6 +96,7 @@
   <div class="tile"><div class="k">Lost to bad chargers</div><div class="v" id="lost">$0.00</div></div>
 </footer>
 <div id="banner"></div>
+<div id="verifybox"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -247,9 +259,12 @@ function feed(e) {
   else if (e.kind === "dispute") tag = '<span class="tag deny">DISPUTE</span>';
   else if (e.kind === "payment") tag = '<span class="tag money">PAID</span>';
   else if (e.kind === "ai") tag = '<span class="tag ai">AI</span>';
-  else if (e.kind === "anchor") tag = '<span class="tag ok">ON-CHAIN</span>';
+  else if (e.kind === "anchor" || (e.kind === "reputation_onchain" && e.level === "ok")) tag = '<span class="tag ok">ON-CHAIN</span>';
+  else if (e.kind === "identity" && e.onchain_id != null) tag = '<span class="tag ok">ERC-8004</span>';
   const link = e.tx_url ? ` <a href="${esc(e.tx_url)}" target="_blank" rel="noopener">${esc(e.tx_hash.slice(0, 14))}…</a>` : "";
-  div.innerHTML = `<span class="t">${esc((e.ts || "").slice(11, 16))}</span>${tag}${esc(e.msg)}${link}`;
+  const sid = e.kind === "receipt" && e.receipt ? e.receipt.session_id : "";
+  const btn = sid ? ` <button class="verify" data-sid="${esc(sid)}">Verify receipt</button>` : "";
+  div.innerHTML = `<span class="t">${esc((e.ts || "").slice(11, 16))}</span>${tag}${esc(e.msg)}${link}${btn}`;
   const f = $("feed"); f.prepend(div);
   while (f.children.length > 300) f.lastChild.remove();
 }
@@ -314,6 +329,24 @@ function handle(e) {
   $("stopped").textContent = state.stopped;
   feed(e);
 }
+
+async function verifyReceipt(sid) {
+  const box = $("verifybox");
+  box.innerHTML = `<div class="vh">Verifying session ${esc(sid)}…</div>`;
+  box.style.display = "block";
+  try {
+    const r = await (await fetch("/api/verify?session_id=" + encodeURIComponent(sid))).json();
+    const steps = r.steps.map((s) => `<li class="${s.ok ? "pass" : "fail"}">${s.ok ? "✔" : "✖"} ${esc(s.text)}</li>`).join("");
+    const anchor = r.anchor_url ? `<a href="${esc(r.anchor_url)}" target="_blank" rel="noopener">Anchor transaction on GOAT</a>` : "";
+    box.innerHTML = `<div class="vh ${r.ok ? "pass" : "fail"}">${r.ok ? "VERIFIED" : "NOT VERIFIED"} · ${esc(r.charger || "")}</div>
+      <ul>${steps}</ul>${anchor}<button class="close" onclick="this.parentNode.style.display='none'">Close</button>`;
+  } catch (err) {
+    box.innerHTML = `<div class="vh fail">Verification request failed</div><button class="close" onclick="this.parentNode.style.display='none'">Close</button>`;
+  }
+}
+$("feed").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button.verify"); if (b) verifyReceipt(b.dataset.sid);
+});
 
 async function poll() {
   try {

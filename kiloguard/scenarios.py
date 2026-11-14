@@ -82,7 +82,8 @@ def run_night(world, scenes: list[int]) -> dict:
                "identity_blocks": identity_blocks, "disputes": disputes, "lost_to_bad_chargers_cents": lost,
                "balance_cents": world.ledger.balance_cents(world.guardian.address)}
     summary["attacks_stopped"] = blocked + identity_blocks + disputes
+    n = summary["attacks_stopped"]
+    lost_txt = f"lost to bad chargers: {usd(lost)} (one chunk)" if lost else "nothing lost to bad chargers"
     world.events.emit("summary", f"Night summary: {kwh:g} kWh bought for {usd(paid)}; "
-                      f"{summary['attacks_stopped']} attacks stopped; most lost to a bad charger: {usd(lost)} "
-                      "(one chunk)", level="scene", **summary)
+                      f"{n} attack{'s' if n != 1 else ''} stopped; {lost_txt}", level="scene", **summary)
     return summary

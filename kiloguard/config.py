@@ -45,8 +45,11 @@ class Settings:
     stablecoin_address: str = ""
     wei_per_cent: int = 1_000_000_000      # native mode: how many wei of test BTC stand for one US cent
     identity: str = "local"                # "local" registry or "erc8004" (reads GOAT's ERC-8004 registry)
-    erc8004_registry: str = ""
-    reasoner: str = "naive"                # "naive" (simulated, gullible) or "backboard"
+    # ERC-8004 registries on GOAT Testnet3, from docs.goat.network (agents / agent-kit / erc-8004)
+    erc8004_registry: str = "0x54B8d8E2455946f2A5B8982283f2359812e815ce"
+    erc8004_reputation: str = "0xd9140951d8aE6E5F625a02F5908535e16e3af964"
+    onchain_reputation: bool = True        # erc8004 mode: also post feedback to the reputation registry
+    reasoner: str = "naive"              # "naive" (simulated, gullible) or "backboard"
     backboard_api_key: str = ""
     backboard_provider: str = "openai"
     backboard_model: str = "gpt-4o"
@@ -65,7 +68,9 @@ class Settings:
             stablecoin_address=env("STABLECOIN_ADDRESS"),
             wei_per_cent=int(env("NATIVE_WEI_PER_CENT", str(cls.wei_per_cent))),
             identity=env("IDENTITY", "local"),
-            erc8004_registry=env("ERC8004_IDENTITY_REGISTRY"),
+            erc8004_registry=env("ERC8004_IDENTITY_REGISTRY", cls.erc8004_registry),
+            erc8004_reputation=env("ERC8004_REPUTATION_REGISTRY", cls.erc8004_reputation),
+            onchain_reputation=env("ONCHAIN_REPUTATION", "1") not in ("0", "false", "no"),
             reasoner=env("REASONER", "naive"),
             backboard_api_key=env("BACKBOARD_API_KEY"),
             backboard_provider=env("BACKBOARD_PROVIDER", "openai"),
