@@ -2,6 +2,7 @@
 runs/
 .pytest_cache/
 
+docs/
 
 # macOS
 .DS_Store
