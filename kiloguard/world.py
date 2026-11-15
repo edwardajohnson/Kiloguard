@@ -4,7 +4,7 @@ from __future__ import annotations
 import socket
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .charger import BEHAVIOURS, ChargerAgent, GoatFlowCharger
 from .config import Settings, load_json
@@ -106,9 +106,12 @@ def build_world(settings: Settings | None = None, events: EventBus | None = None
                         "(fine for receiving payments, not for paying)", level="warn")
     ledger = GoatLedger(settings) if settings.mode == "goat" else SimLedger()
     pay_ledger, goatflow = ledger, None
+    if settings.payment_rail == "goatflow" and settings.mode != "goat":
+        # A simulation can't use GOAT Flow; fall back instead of stopping, so .env can stay set for live runs.
+        events.emit("run", "PAYMENT_RAIL=goatflow only applies to KILOGUARD_MODE=goat; this simulation uses the "
+                    "simulated ledger", level="info")
+        settings = replace(settings, payment_rail="direct")
     if settings.payment_rail == "goatflow":
-        if settings.mode != "goat":
-            raise SystemExit("PAYMENT_RAIL=goatflow needs KILOGUARD_MODE=goat")
         missing = [n for n in ("goatflow_api_key", "goatflow_api_secret", "goatflow_merchant_id",
                                "goatflow_token_contract") if not getattr(settings, n)]
         if missing:
